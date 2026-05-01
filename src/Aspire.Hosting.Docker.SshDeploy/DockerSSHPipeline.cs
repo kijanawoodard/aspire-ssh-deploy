@@ -45,6 +45,7 @@ internal class DockerSSHPipeline(
     private string? _remoteDeployPath;
     private string? _dashboardServiceName;
     private bool _pruneImagesAfterDeploy;
+    private PullPolicy _pullPolicy = PullPolicy.Always;
 
     // Properties with null-checking for required state
     private RemoteOperationsFactory RemoteOperationsFactory => _remoteOperationsFactory ?? throw new InvalidOperationException("Remote operations factory not initialized. Ensure SSH connection step has completed.");
@@ -209,6 +210,17 @@ internal class DockerSSHPipeline(
         // Read optional prune setting (defaults to true)
         var pruneSetting = deploymentSection["PruneImagesAfterDeploy"];
         _pruneImagesAfterDeploy = string.IsNullOrEmpty(pruneSetting) || !string.Equals(pruneSetting, "false", StringComparison.OrdinalIgnoreCase);
+
+        // Pull policy: WithImagePullPolicy(...) annotation wins over Deployment:PullPolicy config.
+        // Default is "always" — preserves historical behavior. Unknown config values fall back to "always".
+        if (DockerComposeEnvironment.TryGetLastAnnotation<ImagePullPolicyAnnotation>(out var pullPolicyAnnotation))
+        {
+            _pullPolicy = pullPolicyAnnotation.Policy;
+        }
+        else
+        {
+            _pullPolicy = PullPolicyExtensions.ParsePullPolicy(deploymentSection["PullPolicy"]);
+        }
 
         // Expand tilde to $HOME if present
         if (!string.IsNullOrEmpty(_remoteDeployPath))
@@ -505,12 +517,13 @@ internal class DockerSSHPipeline(
         // Get registry info from the ContainerRegistryResource attached to the environment
         await AuthenticateRemoteWithRegistryAsync(context, step);
 
-        // Deploy with minimal downtime using docker compose up --pull always --remove-orphans
-        // This pulls images and recreates only changed containers without explicitly stopping first
+        // Deploy with minimal downtime using docker compose up -d --remove-orphans
+        // (optionally with --pull always or --pull never, controlled by Deployment:PullPolicy).
+        // Recreates only changed containers without explicitly stopping first.
         await using var deployTask = await step.CreateTaskAsync("Deploying containers", context.CancellationToken);
-        context.Logger.LogDebug("Deploying containers with pull...");
+        context.Logger.LogDebug("Deploying containers with pull policy {PullPolicy}...", _pullPolicy);
 
-        var deployResult = await RemoteOperationsFactory.DockerComposeService.UpWithPullAsync(RemoteDeployPath, context.CancellationToken);
+        var deployResult = await RemoteOperationsFactory.DockerComposeService.UpAsync(RemoteDeployPath, _pullPolicy, context.CancellationToken);
 
         if (!string.IsNullOrEmpty(deployResult.Output))
         {

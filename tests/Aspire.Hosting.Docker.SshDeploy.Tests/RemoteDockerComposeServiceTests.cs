@@ -1,3 +1,4 @@
+using Aspire.Hosting.Docker.SshDeploy.Models;
 using Aspire.Hosting.Docker.SshDeploy.Services;
 using Aspire.Hosting.Docker.SshDeploy.Tests.Fakes;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -139,7 +140,7 @@ public class RemoteDockerComposeServiceTests
     }
 
     [Fact]
-    public async Task UpWithPullAsync_ExecutesDockerComposeUpWithPullAlways()
+    public async Task UpAsync_WithAlways_EmitsPullAlwaysFlag()
     {
         // Arrange
         var fakeSSHManager = new FakeSSHConnectionManager();
@@ -150,7 +151,7 @@ public class RemoteDockerComposeServiceTests
             NullLogger<RemoteDockerComposeService>.Instance);
 
         // Act
-        var result = await service.UpWithPullAsync("$HOME/app", CancellationToken.None);
+        var result = await service.UpAsync("$HOME/app", PullPolicy.Always, CancellationToken.None);
 
         // Assert
         Assert.True(result.Success);
@@ -159,7 +160,48 @@ public class RemoteDockerComposeServiceTests
     }
 
     [Fact]
-    public async Task UpWithPullAsync_ThrowsOnFailure()
+    public async Task UpAsync_WithMissing_OmitsPullFlag()
+    {
+        // Arrange
+        var fakeSSHManager = new FakeSSHConnectionManager();
+        fakeSSHManager.ConfigureDefaultCommandResult(0, "Deployed", "");
+
+        var service = new RemoteDockerComposeService(
+            fakeSSHManager,
+            NullLogger<RemoteDockerComposeService>.Instance);
+
+        // Act
+        var result = await service.UpAsync("$HOME/app", PullPolicy.Missing, CancellationToken.None);
+
+        // Assert
+        Assert.True(result.Success);
+        var call = fakeSSHManager.Calls.First();
+        Assert.Contains("docker compose up -d --remove-orphans", call.Detail);
+        Assert.DoesNotContain("--pull", call.Detail);
+    }
+
+    [Fact]
+    public async Task UpAsync_WithNever_EmitsPullNeverFlag()
+    {
+        // Arrange
+        var fakeSSHManager = new FakeSSHConnectionManager();
+        fakeSSHManager.ConfigureDefaultCommandResult(0, "Deployed", "");
+
+        var service = new RemoteDockerComposeService(
+            fakeSSHManager,
+            NullLogger<RemoteDockerComposeService>.Instance);
+
+        // Act
+        var result = await service.UpAsync("$HOME/app", PullPolicy.Never, CancellationToken.None);
+
+        // Assert
+        Assert.True(result.Success);
+        var call = fakeSSHManager.Calls.First();
+        Assert.Contains("docker compose up -d --pull never --remove-orphans", call.Detail);
+    }
+
+    [Fact]
+    public async Task UpAsync_ThrowsOnFailure()
     {
         // Arrange
         var fakeSSHManager = new FakeSSHConnectionManager();
@@ -171,9 +213,25 @@ public class RemoteDockerComposeServiceTests
 
         // Act & Assert
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => service.UpWithPullAsync("$HOME/app", CancellationToken.None));
+            () => service.UpAsync("$HOME/app", PullPolicy.Always, CancellationToken.None));
 
         Assert.Contains("Failed to deploy containers", ex.Message);
+    }
+
+    [Theory]
+    [InlineData(null, "Always")]
+    [InlineData("", "Always")]
+    [InlineData("always", "Always")]
+    [InlineData("ALWAYS", "Always")]
+    [InlineData("missing", "Missing")]
+    [InlineData("never", "Never")]
+    [InlineData("bogus", "Always")]
+    public void ParsePullPolicy_HandlesConfigValues(string? input, string expectedName)
+    {
+        // Take parameters as strings so this public Theory method's signature only references public types.
+        // (PullPolicy is internal — exposing it as a parameter would require an internal test method.)
+        var actual = PullPolicyExtensions.ParsePullPolicy(input);
+        Assert.Equal(expectedName, actual.ToString());
     }
 
     [Fact]

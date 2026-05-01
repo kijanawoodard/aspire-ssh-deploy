@@ -26,13 +26,16 @@ internal interface IRemoteDockerComposeService
     Task<ComposeOperationResult> LoginToRegistryAsync(string registryUrl, string username, string password, CancellationToken cancellationToken);
 
     /// <summary>
-    /// Deploys services with minimal downtime by running docker compose up with --pull always and --remove-orphans.
-    /// This pulls images and recreates only changed containers without explicitly stopping first.
+    /// Deploys services with minimal downtime by running <c>docker compose up -d --remove-orphans</c>
+    /// on the remote, optionally adding <c>--pull always</c> or <c>--pull never</c> based on
+    /// <paramref name="pullPolicy"/>. Recreates only changed containers without explicitly stopping
+    /// first.
     /// </summary>
     /// <param name="deployPath">Path to the deployment directory containing docker-compose.yaml</param>
+    /// <param name="pullPolicy">Whether to instruct compose to pull images before starting containers. Defaults to <see cref="PullPolicy.Always"/> to preserve historical behavior.</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Result of the deploy operation</returns>
-    Task<ComposeOperationResult> UpWithPullAsync(string deployPath, CancellationToken cancellationToken);
+    Task<ComposeOperationResult> UpAsync(string deployPath, PullPolicy pullPolicy = PullPolicy.Always, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Prunes unused Docker images to free disk space.
