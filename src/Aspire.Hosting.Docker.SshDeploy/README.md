@@ -191,6 +191,111 @@ export UNSAFE_SHOW_TARGET_HOST=true
 
 ---
 
+## Separate push and pull endpoints (`WithPullRegistry`)
+
+Some workflows push to one registry endpoint and want the remote to pull from a different one.
+Two common shapes:
+
+- **CI → registry mirror.** GitHub Actions pushes to `ghcr.io/myorg/...`, but the remote pulls
+  from a private mirror at `mirror.example.com/myorg/...` that holds the promoted artifact.
+- **Dev box → unregistry on the remote (via SSH tunnel).** The dev box pushes through an SSH
+  tunnel to `host.docker.internal:5001`, but the remote daemon resolves the same image as
+  `localhost:5001/...`. See
+  [Local containerd-backed registry (unregistry)](#local-containerd-backed-registry-unregistry)
+  below for the end-to-end setup.
+
+`WithPullRegistry` swaps the registry prefix on each `*_IMAGE=` line written into the generated
+`.env` file. The push side (`docker push`, `docker login`, image tagging) is untouched.
+
+```csharp
+builder.AddDockerComposeEnvironment("env")
+    .WithContainerRegistry(builder.AddContainerRegistry("reg", "ghcr.io", "myorg"))
+    .WithPullRegistry("mirror.example.com")  // remote resolves images here
+    .WithSshDeploySupport();
+```
+
+Mechanism: it's a thin wrapper over Aspire's `ConfigureEnvFile` hook. During the prepare phase,
+each captured environment variable whose name is `UPPER_SNAKE_CASE` ending in `_IMAGE` and whose
+value contains a `/` has its first slash-delimited segment replaced with the configured pull
+endpoint. Other variables are left alone. If the pull endpoint already matches, the call is a
+no-op.
+
+If you need finer control (per-resource overrides, different rewrites for different image
+variables, conditional logic), call `ConfigureEnvFile` directly instead — `WithPullRegistry`
+is just sugar over it.
+
+---
+
+## Local containerd-backed registry (unregistry)
+
+[unregistry](https://github.com/psviderski/unregistry) is a tiny OCI registry that stores layers
+in your Docker daemon's existing image store. The push side writes images straight into the
+remote daemon — there's no separate blob storage — so no further pull is strictly necessary.
+
+The two friction points it removes:
+
+- **No public registry.** Push from your dev box (or CI) through SSH to a registry the rest of
+  the internet can't see.
+- **No re-pull at deploy time.** The image is already in the remote daemon's image store the
+  moment the push completes.
+
+### What you need on each side
+
+- **Remote machine:** an unregistry instance listening on `localhost:5001`. The upstream
+  README has the install one-liner.
+- **Dev box / CI:** an SSH tunnel exposing the remote's port 5001 locally:
+
+  ```bash
+  ssh -L 5001:localhost:5001 user@remote
+  ```
+
+  With the tunnel up, `docker push localhost:5001/...` from your machine reaches the remote's
+  unregistry through encrypted SSH.
+
+- **Both daemons:** add the registry to `insecure-registries` so docker doesn't try HTTPS.
+  unregistry serves plain HTTP (TLS would be redundant — the only path is loopback or SSH).
+
+  Edit `~/.docker/daemon.json`:
+  ```json
+  {
+    "insecure-registries": ["host.docker.internal:5001", "localhost:5001"]
+  }
+  ```
+
+  Apply on both machines and restart the daemon. The dev box uses `host.docker.internal` because
+  Docker Desktop's daemon can't reach the host's `localhost` directly; the remote uses
+  `localhost` because unregistry runs there.
+
+### Wire it up
+
+```csharp
+var registry = builder.AddContainerRegistry(
+    "unregistry",
+    "host.docker.internal:5001",      // push endpoint (dev box's view of the tunnel)
+    "kaizen-tools");
+
+builder.AddDockerComposeEnvironment("env")
+    .WithContainerRegistry(registry)
+    .WithPullRegistry("localhost:5001")  // pull endpoint (remote's view of itself)
+    .WithSshDeploySupport();
+```
+
+By default the remote still issues `docker compose up -d --pull always`, which causes a
+redundant round-trip back to unregistry — harmless once the registry endpoint is configured as
+insecure on both daemons, but noisy. The companion `Deployment:PullPolicy=never` knob (separate
+PR) lets you skip that pull entirely; once it lands, the deploy pipeline will push through SSH to
+unregistry and the remote will run `docker compose up -d --pull never --remove-orphans` against
+image refs that already exist locally.
+
+### Credentials
+
+`WithPullRegistry` does not introduce a separate credentials channel — `docker login` on the
+remote (when `DockerRegistry:RegistryUsername`/`RegistryPassword` are set) targets the **push**
+endpoint only. unregistry doesn't require auth, so this matches the use case. Bring your own
+credential plumbing if you need a different setup.
+
+---
+
 ## File Transfer
 
 Transfer additional files (certificates, configs, etc.) to the remote server.
