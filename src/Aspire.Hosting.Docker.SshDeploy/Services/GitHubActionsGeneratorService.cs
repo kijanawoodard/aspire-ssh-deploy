@@ -250,10 +250,10 @@ internal class GitHubActionsGeneratorService
         sb.AppendLine("      contents: read");
         sb.AppendLine("      packages: write");
         sb.AppendLine("    steps:");
-        sb.AppendLine("      - uses: actions/checkout@v4");
+        sb.AppendLine("      - uses: actions/checkout@v6");
         sb.AppendLine();
         sb.AppendLine("      - name: Setup .NET");
-        sb.AppendLine("        uses: actions/setup-dotnet@v4");
+        sb.AppendLine("        uses: actions/setup-dotnet@v5");
         sb.AppendLine("        with:");
         sb.AppendLine($"          dotnet-version: '{options.DotNetVersion}'");
         sb.AppendLine();

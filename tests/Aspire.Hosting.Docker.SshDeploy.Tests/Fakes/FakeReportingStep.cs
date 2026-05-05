@@ -14,10 +14,17 @@ internal class FakeReportingStep : IReportingStep
 
     public IReadOnlyList<FakeReportingTask> Tasks => _tasks.AsReadOnly();
 
-    public void Log(LogLevel logLevel, string message, bool enableMarkdown) { }
+    public void Log(LogLevel logLevel, string message) { }
+
+    public void Log(LogLevel logLevel, string message, bool enableMarkdown) => Log(logLevel, message);
+
+    public void Log(LogLevel logLevel, MarkdownString message) => Log(logLevel, message.Value);
 
     public Task CompleteAsync(string completionText, CompletionState completionState = CompletionState.Completed, CancellationToken cancellationToken = default)
         => Task.CompletedTask;
+
+    public Task CompleteAsync(MarkdownString completionText, CompletionState completionState = CompletionState.Completed, CancellationToken cancellationToken = default)
+        => CompleteAsync(completionText.Value, completionState, cancellationToken);
 
     public Task<IReportingTask> CreateTaskAsync(string description, CancellationToken cancellationToken = default)
     {
@@ -25,6 +32,9 @@ internal class FakeReportingStep : IReportingStep
         _tasks.Add(task);
         return Task.FromResult<IReportingTask>(task);
     }
+
+    public Task<IReportingTask> CreateTaskAsync(MarkdownString description, CancellationToken cancellationToken = default)
+        => CreateTaskAsync(description.Value, cancellationToken);
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }
@@ -45,12 +55,18 @@ internal class FakeReportingTask : IReportingTask
 
     public Task UpdateAsync(string statusText, CancellationToken cancellationToken = default) => Task.CompletedTask;
 
+    public Task UpdateAsync(MarkdownString statusText, CancellationToken cancellationToken = default)
+        => UpdateAsync(statusText.Value, cancellationToken);
+
     public Task CompleteAsync(string? completionText = null, CompletionState completionState = Pipelines.CompletionState.Completed, CancellationToken cancellationToken = default)
     {
         CompletionText = completionText;
         CompletionState = completionState;
         return Task.CompletedTask;
     }
+
+    public Task CompleteAsync(MarkdownString completionText, CompletionState completionState = Pipelines.CompletionState.Completed, CancellationToken cancellationToken = default)
+        => CompleteAsync(completionText.Value, completionState, cancellationToken);
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }

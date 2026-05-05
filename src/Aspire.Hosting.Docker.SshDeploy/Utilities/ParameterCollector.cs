@@ -31,31 +31,28 @@ internal static class ParameterCollector
                 continue;
             }
 
-            // Process environment variables to find referenced parameters
-            await resource.ProcessEnvironmentVariableValuesAsync(
-                executionContext,
-                (key, unprocessed, processed, ex) =>
-                {
-                    if (unprocessed is not null)
-                    {
-                        TryAddDependentParameters(unprocessed, referencedParameters, currentDependencySet);
-                    }
-                },
-                logger,
-                cancellationToken: cancellationToken);
+            var configuration = await ExecutionConfigurationBuilder
+                .Create(resource)
+                .WithEnvironmentVariablesConfig()
+                .WithArgumentsConfig()
+                .BuildAsync(executionContext, logger, cancellationToken);
 
-            // Process command line arguments to find referenced parameters
-            await resource.ProcessArgumentValuesAsync(
-                executionContext,
-                (unprocessed, expression, ex, _) =>
-                {
-                    if (unprocessed is not null)
-                    {
-                        TryAddDependentParameters(unprocessed, referencedParameters, currentDependencySet);
-                    }
-                },
-                logger,
-                cancellationToken: cancellationToken);
+            if (configuration.Exception is not null)
+            {
+                throw new InvalidOperationException(
+                    $"Failed to build execution configuration for resource '{resource.Name}'.",
+                    configuration.Exception);
+            }
+
+            foreach (var (_, (unprocessed, _)) in configuration.EnvironmentVariablesWithUnprocessed)
+            {
+                TryAddDependentParameters(unprocessed, referencedParameters, currentDependencySet);
+            }
+
+            foreach (var (unprocessed, _, _) in configuration.ArgumentsWithUnprocessed)
+            {
+                TryAddDependentParameters(unprocessed, referencedParameters, currentDependencySet);
+            }
         }
 
         // Combine explicit parameters with dependent parameters

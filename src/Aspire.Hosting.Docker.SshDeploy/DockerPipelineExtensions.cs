@@ -116,8 +116,8 @@ public static class DockerPipelineExtensions
         // Register DockerSSHPipeline as a keyed service (one per resource)
         builder.Services.AddKeyedSingleton(
             resourceBuilder.Resource,
-            (sp, key) => new DockerSSHPipeline(
-                (DockerComposeEnvironmentResource)key,
+            (sp, _) => new DockerSSHPipeline(
+                resourceBuilder.Resource,
                 sp.GetRequiredService<DockerCommandExecutor>(),
                 sp.GetRequiredService<IPipelineOutputService>(),
                 sp.GetRequiredService<ISSHConnectionFactory>(),
