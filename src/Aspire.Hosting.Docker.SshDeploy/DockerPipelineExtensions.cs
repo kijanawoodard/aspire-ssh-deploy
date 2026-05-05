@@ -45,6 +45,21 @@ public class FileTransferAnnotation(string localPath, IValueProvider remotePath,
 
 
 /// <summary>
+/// Carries the <see cref="PullPolicy"/> selected via
+/// <see cref="DockerPipelineExtensions.WithImagePullPolicy(IResourceBuilder{DockerComposeEnvironmentResource}, PullPolicy)"/>.
+/// When present on a <see cref="DockerComposeEnvironmentResource"/>, the deploy pipeline uses this
+/// value in preference to the <c>Deployment:PullPolicy</c> configuration string.
+/// </summary>
+/// <param name="policy">The pull policy to apply.</param>
+public class ImagePullPolicyAnnotation(PullPolicy policy) : IResourceAnnotation
+{
+    /// <summary>
+    /// Gets the configured pull policy.
+    /// </summary>
+    public PullPolicy Policy { get; } = policy;
+}
+
+/// <summary>
 /// Provides extension methods for adding Docker SSH pipeline resources to a distributed application.
 /// </summary>
 public static class DockerPipelineExtensions
@@ -230,6 +245,28 @@ public static class DockerPipelineExtensions
         string remotePath)
     {
         builder.Resource.Annotations.Add(new FileTransferAnnotation(localPath, ReferenceExpression.Create($"{remotePath}"), isRelativeToDeployPath: false));
+        return builder;
+    }
+
+    /// Sets the image pull policy used when the deploy pipeline runs <c>docker compose up</c> on
+    /// the remote. Wins over the <c>Deployment:PullPolicy</c> configuration string when both are
+    /// set. Method name matches the <c>WithImagePullPolicy</c> convention used elsewhere in Aspire.
+    /// </summary>
+    /// <param name="builder">The Docker Compose environment resource builder.</param>
+    /// <param name="policy">The pull policy to apply on the remote.</param>
+    /// <returns>The resource builder for method chaining.</returns>
+    /// <remarks>
+    /// Mirrors the <c>Deployment:PullPolicy</c> config key but is more discoverable from AppHost.cs
+    /// and naturally pairs with
+    /// <see cref="WithPullRegistry(IResourceBuilder{DockerComposeEnvironmentResource}, string)"/>.
+    /// Takes <see cref="PullPolicy"/> rather than <c>Aspire.Hosting.ApplicationModel.ImagePullPolicy</c>
+    /// because the latter does not include <c>Never</c> until Aspire 13.2.
+    /// </remarks>
+    public static IResourceBuilder<DockerComposeEnvironmentResource> WithImagePullPolicy(
+        this IResourceBuilder<DockerComposeEnvironmentResource> builder,
+        PullPolicy policy)
+    {
+        builder.Resource.Annotations.Add(new ImagePullPolicyAnnotation(policy));
         return builder;
     }
 

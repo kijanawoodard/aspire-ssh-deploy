@@ -191,7 +191,51 @@ export UNSAFE_SHOW_TARGET_HOST=true
 
 ---
 
-## Separate push and pull endpoints (`WithPullRegistry`)
+## Deployment Configuration
+
+### Pull policy
+
+The remote `docker compose up` step always passes `--pull always` by default, so registries are
+re-checked on every deploy. Override either through code with `WithImagePullPolicy(...)` or through
+configuration with `Deployment:PullPolicy`:
+
+| Value     | Emitted command                                              | When to use                                                                 |
+| --------- | ------------------------------------------------------------ | --------------------------------------------------------------------------- |
+| `always`  | `docker compose up -d --pull always --remove-orphans`        | **Default.** Re-pull every deploy. Safest with multi-host registries.       |
+| `missing` | `docker compose up -d --remove-orphans`                      | Only pull when the image isn't in the remote daemon's local store (Docker's compose default). |
+| `never`   | `docker compose up -d --pull never --remove-orphans`         | Skip pulls entirely. Required for workflows that load images directly into the remote daemon (e.g. [unregistry](https://github.com/psviderski/unregistry)). |
+
+**From AppHost.cs** (most discoverable, type-safe — naming matches `WithImagePullPolicy` on container resources elsewhere in Aspire):
+
+```csharp
+builder.AddDockerComposeEnvironment("env")
+    .WithSshDeploySupport()
+    .WithImagePullPolicy(PullPolicy.Never);
+```
+
+**From environment / appsettings** (override at deploy time without an AppHost rebuild):
+
+```bash
+export Deployment__PullPolicy=never
+```
+
+```json
+{
+  "Deployment": {
+    "PullPolicy": "never"
+  }
+}
+```
+
+If both are set, `WithImagePullPolicy(...)` wins — explicit AppHost configuration overrides
+environment-driven defaults, matching how `WithContainerRegistry(...)` overrides the config-derived
+default registry. Unknown configuration values fall back to `always`.
+
+> **Note on the enum type.** `WithImagePullPolicy(...)` takes this package's `PullPolicy` enum rather
+> than `Aspire.Hosting.ApplicationModel.ImagePullPolicy`. The Aspire enum didn't include `Never`
+> until 13.2; once this package's minimum Aspire version moves to 13.2+ we can adopt it directly.
+
+### Separate push and pull endpoints (`WithPullRegistry`)
 
 Some workflows push to one registry endpoint and want the remote to pull from a different one.
 Two common shapes:
@@ -282,10 +326,10 @@ builder.AddDockerComposeEnvironment("env")
 
 By default the remote still issues `docker compose up -d --pull always`, which causes a
 redundant round-trip back to unregistry — harmless once the registry endpoint is configured as
-insecure on both daemons, but noisy. The companion `Deployment:PullPolicy=never` knob (separate
-PR) lets you skip that pull entirely; once it lands, the deploy pipeline will push through SSH to
-unregistry and the remote will run `docker compose up -d --pull never --remove-orphans` against
-image refs that already exist locally.
+insecure on both daemons, but noisy. Pair with `WithImagePullPolicy(PullPolicy.Never)` or
+`Deployment:PullPolicy=never` to skip that pull entirely, so the remote runs
+`docker compose up -d --pull never --remove-orphans` against image refs that already exist
+locally.
 
 ### Credentials
 

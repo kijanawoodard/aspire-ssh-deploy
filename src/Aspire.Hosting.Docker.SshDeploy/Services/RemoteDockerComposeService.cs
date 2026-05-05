@@ -78,15 +78,17 @@ internal class RemoteDockerComposeService : IRemoteDockerComposeService
             Success: result.ExitCode == 0);
     }
 
-    public async Task<ComposeOperationResult> UpWithPullAsync(string deployPath, CancellationToken cancellationToken)
+    public async Task<ComposeOperationResult> UpAsync(string deployPath, PullPolicy pullPolicy = PullPolicy.Always, CancellationToken cancellationToken = default)
     {
-        _logger.LogDebug("Deploying containers with pull in {DeployPath}", deployPath);
+        _logger.LogDebug("Deploying containers in {DeployPath} with pull policy {PullPolicy}", deployPath, pullPolicy);
 
-        // Use docker compose up with --pull always and --remove-orphans for minimal downtime deployments.
-        // This pulls images and recreates only changed containers without explicitly stopping first.
+        // docker compose up -d --remove-orphans recreates only changed containers without stopping first.
+        // The optional --pull flag is driven by pullPolicy; PullPolicy.Missing emits no flag (Docker default).
         // --remove-orphans cleans up services that have been removed from compose file.
+        var pullFlag = pullPolicy.ToComposeFlag();
+        var pullFragment = string.IsNullOrEmpty(pullFlag) ? "" : pullFlag + " ";
         var result = await _sshConnectionManager.ExecuteCommandWithOutputAsync(
-            $"cd \"{deployPath}\" && docker compose up -d --pull always --remove-orphans",
+            $"cd \"{deployPath}\" && docker compose up -d {pullFragment}--remove-orphans",
             cancellationToken);
 
         if (result.ExitCode != 0)

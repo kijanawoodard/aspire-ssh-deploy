@@ -13,7 +13,7 @@ internal class FakeRemoteDockerComposeService : IRemoteDockerComposeService
     private readonly List<ComposeOperation> _operations = new();
     private bool _shouldStopFail;
     private bool _shouldLoginFail;
-    private bool _shouldUpWithPullFail;
+    private bool _shouldUpFail;
     private bool _shouldPruneFail;
     private string _logsOutput = "";
 
@@ -39,11 +39,11 @@ internal class FakeRemoteDockerComposeService : IRemoteDockerComposeService
     }
 
     /// <summary>
-    /// Configures the up with pull operation to fail.
+    /// Configures the up operation to fail.
     /// </summary>
-    public void ConfigureUpWithPullFailure(bool shouldFail = true)
+    public void ConfigureUpFailure(bool shouldFail = true)
     {
-        _shouldUpWithPullFail = shouldFail;
+        _shouldUpFail = shouldFail;
     }
 
     /// <summary>
@@ -102,11 +102,11 @@ internal class FakeRemoteDockerComposeService : IRemoteDockerComposeService
             Success: true));
     }
 
-    public Task<ComposeOperationResult> UpWithPullAsync(string deployPath, CancellationToken cancellationToken)
+    public Task<ComposeOperationResult> UpAsync(string deployPath, PullPolicy pullPolicy = PullPolicy.Always, CancellationToken cancellationToken = default)
     {
-        _operations.Add(new ComposeOperation("UpWithPull", deployPath));
+        _operations.Add(new ComposeOperation("Up", deployPath, PullPolicy: pullPolicy));
 
-        if (_shouldUpWithPullFail)
+        if (_shouldUpFail)
         {
             throw new InvalidOperationException("Failed to deploy containers (configured to fail)");
         }
@@ -196,4 +196,4 @@ internal class FakeRemoteDockerComposeService : IRemoteDockerComposeService
 /// <summary>
 /// Represents a recorded Docker Compose operation.
 /// </summary>
-public record ComposeOperation(string Operation, string DeployPath, int? TailLines = null, string? Username = null);
+internal record ComposeOperation(string Operation, string DeployPath, int? TailLines = null, string? Username = null, PullPolicy? PullPolicy = null);
