@@ -196,7 +196,7 @@ export UNSAFE_SHOW_TARGET_HOST=true
 ### Pull policy
 
 The remote `docker compose up` step always passes `--pull always` by default, so registries are
-re-checked on every deploy. Override either through code with `WithPullPolicy(...)` or through
+re-checked on every deploy. Override either through code with `WithImagePullPolicy(...)` or through
 configuration with `Deployment:PullPolicy`:
 
 | Value     | Emitted command                                              | When to use                                                                 |
