@@ -6,6 +6,7 @@ using Aspire.Hosting.Docker;
 using Aspire.Hosting.Docker.SshDeploy.Abstractions;
 using Aspire.Hosting.Docker.SshDeploy.Infrastructure;
 using Aspire.Hosting.Docker.SshDeploy.Services;
+using Aspire.Hosting.Docker.SshDeploy.Utilities;
 using Aspire.Hosting.Eventing;
 using Aspire.Hosting.Lifecycle;
 using Aspire.Hosting.Pipelines;
@@ -41,6 +42,7 @@ public class FileTransferAnnotation(string localPath, IValueProvider remotePath,
     /// </summary>
     public bool IsRelativeToDeployPath { get; } = isRelativeToDeployPath;
 }
+
 
 /// <summary>
 /// Carries the <see cref="PullPolicy"/> selected via
@@ -246,7 +248,6 @@ public static class DockerPipelineExtensions
         return builder;
     }
 
-    /// <summary>
     /// Sets the image pull policy used when the deploy pipeline runs <c>docker compose up</c> on
     /// the remote. Wins over the <c>Deployment:PullPolicy</c> configuration string when both are
     /// set. Method name matches the <c>WithImagePullPolicy</c> convention used elsewhere in Aspire.
@@ -267,5 +268,45 @@ public static class DockerPipelineExtensions
     {
         builder.Resource.Annotations.Add(new ImagePullPolicyAnnotation(policy));
         return builder;
+    }
+
+    /// <summary>
+    /// Configures the registry endpoint the <em>remote</em> daemon should pull images from, when it
+    /// differs from the endpoint <c>docker push</c> sends layers to. Image references in the
+    /// generated <c>.env</c> file are rewritten so the registry prefix on each <c>*_IMAGE</c>
+    /// variable is replaced with <paramref name="endpoint"/>. The push side (<c>docker push</c>,
+    /// <c>docker login</c>, image tagging) is unchanged.
+    /// </summary>
+    /// <param name="builder">The Docker Compose environment resource builder.</param>
+    /// <param name="endpoint">The pull registry endpoint as the remote sees it (e.g. <c>localhost:5001</c> for an unregistry sidecar on the remote, or a private mirror's hostname).</param>
+    /// <returns>The resource builder for method chaining.</returns>
+    /// <remarks>
+    /// Implemented as an Aspire <c>ConfigureEnvFile</c> callback that runs during the prepare phase,
+    /// before the <c>.env</c> file is written. Two canonical use cases:
+    /// <list type="bullet">
+    /// <item><description><see href="https://github.com/psviderski/unregistry">unregistry</see>: the dev box pushes through an SSH tunnel to <c>host.docker.internal:5001</c>, and the remote daemon resolves the same image as <c>localhost:5001/...</c>. Pair with <c>Deployment:PullPolicy=never</c> to skip the otherwise-redundant compose pull entirely.</description></item>
+    /// <item><description>Registry mirror / image-promotion: CI pushes to a public registry, and the remote pulls from a different mirror or private registry that holds the promoted artifact.</description></item>
+    /// </list>
+    /// The rewrite replaces the first slash-delimited segment of each <c>*_IMAGE</c> value (which
+    /// Aspire always emits as <c>{registry-endpoint}/{repo}/{name}:{tag}</c>). Values without a
+    /// slash and non-image variables are left untouched.
+    /// </remarks>
+    public static IResourceBuilder<DockerComposeEnvironmentResource> WithPullRegistry(
+        this IResourceBuilder<DockerComposeEnvironmentResource> builder,
+        string endpoint)
+    {
+        return builder.ConfigureEnvFile(envVars =>
+        {
+            // Snapshot keys via ToList because we may mutate values; iterating the live dict is fine,
+            // but ToList future-proofs against any IDictionary impl that doesn't allow concurrent reads.
+            foreach (var (name, envVar) in envVars.ToList())
+            {
+                var rewritten = ImageRefRewriter.RewriteIfImage(name, envVar.DefaultValue, endpoint);
+                if (rewritten is not null)
+                {
+                    envVar.DefaultValue = rewritten;
+                }
+            }
+        });
     }
 }
