@@ -6,6 +6,7 @@ public class ImageRefRewriterTests
 {
     [Theory]
     [InlineData("WEB_IMAGE", "host.docker.internal:5001/kaizen-tools/web:abc", "localhost:5001", "localhost:5001/kaizen-tools/web:abc")]
+    [InlineData("WEB_IMAGE", "host.docker.internal:5001/kaizen-tools/web:abc", "localhost:5001/", "localhost:5001/kaizen-tools/web:abc")]
     [InlineData("PYTHON_API_IMAGE", "ghcr.io/myorg/api:v1", "mirror.example.com", "mirror.example.com/myorg/api:v1")]
     [InlineData("FOO_BAR_IMAGE", "registry-1.docker.io/lib/foo:latest", "private.example.com:5000", "private.example.com:5000/lib/foo:latest")]
     public void RewriteIfImage_RewritesPrefixOnImageVars(string varName, string value, string pullEndpoint, string expected)
@@ -48,6 +49,12 @@ public class ImageRefRewriterTests
         Assert.Null(ImageRefRewriter.RewriteIfImage("WEB_IMAGE", "localhost:5001/repo/web:tag", "localhost:5001"));
     }
 
+    [Fact]
+    public void RewriteIfImage_NullWhenAlreadyAtPullEndpointWithTrailingSlash()
+    {
+        Assert.Null(ImageRefRewriter.RewriteIfImage("WEB_IMAGE", "localhost:5001/repo/web:tag", "localhost:5001/"));
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]
@@ -59,6 +66,7 @@ public class ImageRefRewriterTests
     [Theory]
     [InlineData(null)]
     [InlineData("")]
+    [InlineData("/")]
     public void RewriteIfImage_NullWhenPullEndpointMissing(string? pullEndpoint)
     {
         Assert.Null(ImageRefRewriter.RewriteIfImage("WEB_IMAGE", "ghcr.io/repo/web:tag", pullEndpoint!));

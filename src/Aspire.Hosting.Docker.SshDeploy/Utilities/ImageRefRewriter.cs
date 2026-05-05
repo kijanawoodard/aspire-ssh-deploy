@@ -29,7 +29,10 @@ internal static class ImageRefRewriter
         var slashIndex = value.IndexOf('/');
         if (slashIndex <= 0) return null;
 
-        var rewritten = pullEndpoint + value[slashIndex..];
+        var normalizedPullEndpoint = pullEndpoint.TrimEnd('/');
+        if (normalizedPullEndpoint.Length == 0) return null;
+
+        var rewritten = normalizedPullEndpoint + value[slashIndex..];
         return string.Equals(rewritten, value, StringComparison.Ordinal) ? null : rewritten;
     }
 
