@@ -8,6 +8,6 @@
   },
   "packages": {
     "Aspire.Hosting.Docker.SshDeploy": "../../src/Aspire.Hosting.Docker.SshDeploy/Aspire.Hosting.Docker.SshDeploy.csproj",
-    "Aspire.Hosting.Redis": "13.2.4"
+    "Aspire.Hosting.Redis": "13.3.0"
   }
 }
